@@ -1,5 +1,6 @@
 #include <iostream>
 #include <filesystem>
+#include <stdexcept>
 
 #include "FileIndexer.h"
 
@@ -47,9 +48,10 @@ int main() {
         std::cout << "==============================\n";
 
         std::cout << "1. Search by filename\n";
-        std::cout << "2. Search by extension\n";
-        std::cout << "3. Search by size\n";
-        std::cout << "4. Exit\n";
+        std::cout << "2. Search by path\n";
+        std::cout << "3. Search by extension\n";
+        std::cout << "4. Search by size\n";
+        std::cout << "5. Exit\n";
 
         std::cout << "\nChoose an option: ";
         int choice;
@@ -57,18 +59,45 @@ int main() {
 
         std::cin.ignore();
 
-        if (choice == 4) return 0;
+        if (choice == 5) return 0;
 
         if (choice == 1) {
             std::string query;
             std::cout << "Search filename: ";
             std::getline(std::cin,query);
-            std::vector<FileInfo> results = indexer.search(query);
+
+            auto exactResults = indexer.searchByNameExact(query);
+
+            if (!exactResults.empty()) {
+                displayResults(exactResults);
+
+                char answer;
+
+                std::cout << "\nSearch for filenames containing \"" << query << "\" as a sunstring? (y/n): ";
+                std::cin >> answer;
+
+                if (answer == 'y' || answer == 'Y') {
+                    auto substringResults = indexer.searchByNameSubstring(query);
+                    displayResults(substringResults);
+                }
+            }
+            else {
+                std::cout << "\nNo exact filename match found";
+                auto substringResults = indexer.searchByNameSubstring(query);
+                displayResults(substringResults);
+            }
+        }
+
+        else if (choice == 2) {
+            std::string query;
+            std::cout << "Search path: ";
+            std::getline(std::cin,query);
+            std::vector<FileInfo> results = indexer.searchByPath(query);
 
             displayResults(results);
         }
 
-        else if (choice == 2) {
+        else if (choice == 3) {
             std::string query;
             std::cout << "Enter Exntension: ";
             std::getline(std::cin,query);
@@ -77,16 +106,21 @@ int main() {
             displayResults(results);
         }
 
-        else if (choice == 3) {
-            std::uintmax_t query;
-            std::cout << "ENter minimun size in bytes: ";
-            std::cin >> query;
+       else if (choice == 4) {
 
-            std::cin.ignore();
+            std::string query;
 
-            std::vector<FileInfo> results = indexer.searchByMinSize(query);
+            std::cout << "Enter size in bytes: ";
+            std::getline(std::cin,query);
 
-            displayResults(results);
+            try {
+                std::vector<FileInfo> results = indexer.searchBySizeQuery(query);
+
+                displayResults(results);
+            }
+            catch (const std::invalid_argument& e) {
+                std::cout << "Invalid query: " << e.what() << '\n';
+            }
         }
     }
 }
