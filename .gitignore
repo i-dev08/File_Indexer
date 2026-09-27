@@ -1,4 +1,5 @@
 build/
+data/
 
 CmakeFiles/
 CMakeCache.txt
@@ -7,5 +8,7 @@ Makefile
 .ninja_deps
 .ninja_log
 build.ninja
+.vscode/
+.idea/
 
 *.exe
