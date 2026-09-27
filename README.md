@@ -2,49 +2,75 @@
 
 A command-line file indexing and search tool built in **C++17** using `std::filesystem`.
 
-The project recursively scans a directory, builds in-memory indexes for file metadata, and provides multiple ways to search the indexed files.
+The project recursively scans directories, builds metadata indexes for fast searching, persists the index to disk, and supports incremental updates when files are added, modified, or deleted.
 
 ## Features
 
 * **Recursive directory scanning**
 
-  * Scans the selected directory and its subdirectories.
+  * Scans selected directories and their subdirectories.
+  * Supports indexing multiple directories.
+
 * **File metadata indexing**
 
   * File name
   * Full path
   * File extension
   * File size
-* **Case-insensitive filename search**
+  * Last modified timestamp
+  * Indexed root directory
 
-  * Exact filename lookup using a hash-based index.
-  * Substring filename search using a trigram (N-gram) index.
-  * Automatically falls back to substring search when no exact filename match is found.
-* **Case-insensitive path search**
-* **Extension-based search**
+* **Fast indexed search**
 
-  * Supports input such as `cpp` or `.cpp`.
-* **File-size filtering**
+  * Exact filename search
+  * Case-insensitive filename search
+  * Filename substring search
+  * Path search
+  * Extension search
+  * Size-based filtering
 
-  * Supports `>`, `<`, `>=`, `<=`, and `=` comparisons.
-  * Supports units such as `B`, `KB`, `MB`, and `GB`.
+* **Trigram substring indexing**
+
+  * Uses a trigram index to efficiently locate candidate files for substring searches.
+  * Short queries fall back to linear search.
+  * Candidate results are verified against the actual filename.
+
+* **Persistent index**
+
+  * Saves the metadata index to disk.
+  * Loads the index when the program starts.
+  * Avoids rebuilding the entire index after every restart.
+  * Derived search indexes are rebuilt from persisted metadata.
+
+* **Incremental indexing**
+
+  * Detects newly created files.
+  * Detects deleted files.
+  * Detects modified files.
+  * Updates only the affected entries instead of rebuilding the entire index.
+
 * **Interactive command-line interface**
+
+* **CMake + Ninja build system**
 
 ## Project Structure
 
 ```text
 cpp-file-indexer/
+
 ├── include/
 │   └── FileIndexer.h
 ├── src/
 │   ├── FileIndexer.cpp
 │   └── main.cpp
 ├── tests/
-├── sample_data/
+├── data/
 ├── CMakeLists.txt
 ├── .gitignore
 └── README.md
 ```
+
+The `data/` directory is used for locally generated index data and is not tracked by Git.
 
 ## Requirements
 
@@ -83,59 +109,40 @@ On Windows/MSYS2:
 ./build/file_indexer.exe
 ```
 
-The program will ask for a directory to scan:
+On first launch, the program allows a directory to be added to the index.
 
-```text
-Enter directory path: sample_data
+Once an index has been created, it is saved to disk and loaded automatically on subsequent launches.
 
-Indexed 12 files.
-```
+## Search Operations
 
-You can then choose from the available search operations:
-
-```text
-==============================
-       C++ FILE INDEXER
-==============================
-
-1. Search by filename
-2. Search by path
-3. Search by extension
-4. Search by size
-5. Exit
-```
-
-## Example
+The index supports several search operations:
 
 ### Search by filename
 
-The filename search first checks for an exact filename match.
+Supports both exact and substring-based filename searches.
 
 ```text
-Search filename: report.cpp
+Search filename: report
+```
 
-Results: 1
+Example result:
 
+```text
 Name: report.cpp
 Path: sample_data/project/report.cpp
 Extension: .cpp
 Size: 1842
 ```
 
-If an exact match is found, the user can optionally perform a substring search.
+Filename searches are case-insensitive.
 
-If no exact match is found, substring search is performed automatically.
+### Search by path
 
-For example:
+Searches indexed file paths without case sensitivity.
 
 ```text
-Search filename: report
-
-No exact filename match found.
-Searching for filenames containing "report"...
+Search path: project/src
 ```
-
-The substring search uses a **trigram index** to identify candidate files before verifying the actual filename match.
 
 ### Search by extension
 
@@ -145,39 +152,29 @@ Both of these inputs are supported:
 cpp
 ```
 
-or
+or:
 
 ```text
 .cpp
 ```
 
-### Search by path
-
-Path searches are case-insensitive and match paths containing the supplied query.
-
 ### Search by size
 
-Size queries support comparison operators:
+Supports size comparisons such as:
 
 ```text
-> 10 MB
-< 500 KB
->= 1 GB
-<= 5 MB
-= 1024 B
+> 5000
+< 10000
+>= 5000
+<= 10000
+= 5000
 ```
 
-The parser also accepts decimal values such as:
+Size queries can also use supported units where applicable.
 
-```text
-1.5 MB
-```
+## Index Architecture
 
-## Technical Details
-
-The project uses C++17's `std::filesystem` library for directory traversal and file metadata.
-
-Each indexed file is represented by a `FileInfo` structure:
+The project maintains a primary collection of `FileInfo` objects:
 
 ```cpp
 struct FileInfo {
@@ -185,40 +182,59 @@ struct FileInfo {
     std::string path;
     std::string extension;
     std::uintmax_t size;
+    std::string root;
+    std::filesystem::file_time_type lastModified;
 };
 ```
 
-The project maintains several in-memory indexes.
+The `files` vector acts as the source of truth.
 
-### Filename index
-
-Exact filename searches use an `std::unordered_map`:
+Several secondary indexes store positions into this vector:
 
 ```text
-filename → file indices
+files
+  │
+  ├── nameIndex
+  ├── extensionIndex
+  ├── pathIndex
+  └── ngramIndex
 ```
 
-This allows exact filename lookups without scanning every indexed file.
+### Name Index
 
-### Extension index
-
-Extensions are also indexed using an `std::unordered_map`:
+Maps normalized filenames to file indexes for fast exact filename lookup.
 
 ```text
-extension → file indices
+filename → [file indexes]
 ```
 
-### N-gram index
+### Extension Index
 
-Substring filename searches use a **trigram index**.
+Maps normalized extensions to file indexes.
 
-A filename such as:
+```text
+extension → [file indexes]
+```
+
+### Path Index
+
+Maps a full file path directly to its file index.
+
+```text
+path → file index
+```
+
+### Trigram Index
+
+Filename substring searches use three-character sequences, or **trigrams**.
+
+For example:
 
 ```text
 report.cpp
 ```
 
-is divided into three-character sequences:
+can produce trigrams such as:
 
 ```text
 rep
@@ -227,58 +243,70 @@ por
 ort
 rt.
 t.c
-.cp
-cpp
+.cpp
 ```
 
-The index stores mappings from each trigram to the files containing it.
+The index maps each trigram to candidate file indexes. Candidate lists are intersected and the resulting files are verified using the actual substring search.
 
-When a substring query is made, the query is divided into trigrams and their candidate file sets are intersected. The remaining candidates are then verified using the actual substring search.
+Queries shorter than three characters use a linear-search fallback.
 
-This reduces the number of files that need to be examined during substring searches compared with scanning every filename.
+## Persistent Index
 
-### Source of truth
+The index can be serialized to disk and loaded again without rescanning the indexed directories.
 
-The `files` vector stores the actual `FileInfo` records.
+The persisted data contains:
 
-The indexes store references to those records using their vector positions rather than duplicating the complete file metadata.
+* Indexed roots
+* File metadata
+* File sizes
+* Last modified timestamps
+* File paths
+* File extensions
 
-## Current Architecture
+Derived search indexes are rebuilt when the index is loaded rather than being stored separately.
+
+This keeps the persisted representation focused on the source-of-truth metadata.
+
+## Incremental Indexing
+
+The index can be validated against the current filesystem state.
+
+During validation, files are classified as:
 
 ```text
-             FILESYSTEM
-                 │
-                 ▼
-          DIRECTORY SCANNER
-                 │
-                 ▼
-             FileInfo
-                 │
-        ┌────────┼────────┐
-        ▼        ▼        ▼
-   nameIndex  extension  ngramIndex
-        │        │        │
-        └────────┼────────┘
-                 ▼
-            SEARCH ENGINE
-                 │
-                 ▼
-              RESULTS
+Valid
+Modified
+Missing
+New
 ```
 
-## Future Improvements
+`updateIndex()` then applies only the required changes:
 
-Planned improvements include:
+```text
+Modified file
+    ↓
+Update metadata
 
-* Persistent index storage
-* Incremental indexing for new, modified, and deleted files
-* File sorting and result ranking
-* Duplicate file detection
-* File content indexing and search
-* Performance benchmarking on large datasets
-* More robust filesystem error handling
-* Improved command-line input validation
-* Unit testing
+Missing file
+    ↓
+Remove from files + indexes
+
+New file
+    ↓
+Create FileInfo + add to indexes
+```
+
+Deleted files are handled using **swap-and-pop** so that the main file vector remains compact.
+
+When a file is removed from the middle of the vector, the final element is moved into its position and the affected indexes are updated accordingly.
+
+## Multi-Root Indexing
+
+Multiple directories can be indexed by the same `FileIndexer` instance.
+
+Each file stores the root from which it was indexed, allowing incremental updates to associate newly discovered files with the correct indexed root.
+
+The persisted index also stores all indexed roots.
 
 ## Technologies
 
@@ -289,6 +317,20 @@ Planned improvements include:
 * **`std::unordered_set`**
 * **CMake**
 * **Ninja**
+
+## Future Improvements
+
+Potential future improvements include:
+
+* Searching inside file contents
+* Combining multiple metadata filters
+* Sorting and ranking search results
+* Duplicate file detection using hashing
+* Unit and integration tests
+* Benchmarking with large file collections
+* Measuring query latency and memory usage
+* More robust command-line input validation
+* Additional filesystem error handling
 
 ## Author
 
