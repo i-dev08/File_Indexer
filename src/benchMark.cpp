@@ -6,7 +6,6 @@
 #include <string>
 #include <chrono>
 #include <vector>
-#include <random>
 #include <windows.h>
 #include <psapi.h>
 
@@ -18,14 +17,43 @@ void generateBenchmarkDataset(const fs::path& benchmarkDirectory, int fileCount)
         fs::remove_all(benchmarkDirectory);
     }
 
-    fs::create_directories(benchmarkDirectory);
+    const std::vector<fs::path> folders = {
+        "Documents/Reports/2024",
+        "Documents/Reports/2025",
+        "Documents/Reports/2026",
+
+        "Documents/Projects/Game",
+        "Documents/Projects/Website",
+        "Documents/Projects/Mobile",
+
+        "Documents/Notes",
+
+        "Downloads/Software",
+        "Downloads/Archives",
+        "Downloads/Misc",
+
+        "Pictures/Personal",
+        "Pictures/College",
+        "Pictures/Projects",
+
+        "College/DSA",
+        "College/DBMS",
+        "College/OS",
+
+        "College/Projects",
+
+        "College/Projects/Game"
+    };
+
+    for (const auto& folder : folders) {
+        fs::create_directories(benchmarkDirectory/folder);
+    }
 
     std::cout << "Generating " << fileCount << " benchmark files...\n";
 
-    std::mt19937 reg(42);
-
     for (int i=0; i< fileCount; i++) {
         std::string filename;
+        std::string extension;
         if (i<30000) {
             filename = "report_"+std::to_string(i)+".txt";
         }else if (i<42500) {
@@ -35,7 +63,10 @@ void generateBenchmarkDataset(const fs::path& benchmarkDirectory, int fileCount)
         }else {
             filename = "client_"+std::to_string(i)+"_data.txt";
         }
-        fs::path filePath = benchmarkDirectory / filename;
+
+        const fs::path& folder = folders[i % folders.size()];
+
+        fs::path filePath = benchmarkDirectory / folder / filename;
         std::ofstream file(filePath);
         file << "benchmark test file\n";
     }
@@ -44,7 +75,7 @@ void generateBenchmarkDataset(const fs::path& benchmarkDirectory, int fileCount)
 
 FileIndexer buildBenchmarkIndex(const fs::path& benchmarkDirectory) {
     FileIndexer indexer;
-    std::cout << "indexeing dataset...\n";
+    std::cout << "indexing dataset...\n";
     indexer.scan(benchmarkDirectory.string());
     std::cout << "Files indexed\n";
     return indexer;
@@ -53,7 +84,7 @@ FileIndexer buildBenchmarkIndex(const fs::path& benchmarkDirectory) {
 void runBenchmark(const FileIndexer& indexer, const std::vector<std::string>& queries, int iterations) {
     for (const auto& query : queries) indexer.searchByNameSubstring(query);
 
-    std::cout << "\nRunning benchmark....\n";
+    std::cout << "\nRunning benchmark...\n";
     std::cout << "iterations per query: " << iterations << "\n\n";
 
     for (const auto& query : queries) {
@@ -101,7 +132,7 @@ int main() {
     std::size_t memoryBefore = getMemoryUsage();
 
     FileIndexer indexer = buildBenchmarkIndex(benchmarkDirectory);
-        
+
     std::size_t memoryAfter = getMemoryUsage();
     std::cout << "Memory before indexing: " << memoryBefore / (1024 * 1024) << " MB\n";
 

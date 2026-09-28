@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <fstream>
 #include <limits>
+#include <iostream>
 
 namespace {
     void writeString(std::ofstream& out, const std::string& value) {
@@ -260,25 +261,25 @@ SizeQuery FileIndexer::parseSizeQuery(const std::string& input) const {
     return query;
 }
 
-std::vector<FileInfo> FileIndexer::searchByField(const std::string& query, SearchField field) const {
-    std::vector<FileInfo> results;
+std::vector<std::size_t> FileIndexer::searchByField(const std::string& query, SearchField field) const {
+    std::vector<std::size_t> results;
 
     std::string lowerQuery = lowerCase(query);
 
-    for (const auto& file : files) {
+    for (std::size_t i =0; i< files.size(); i++) {
         std::string value;
 
         switch (field) {
             case SearchField::NAME:
-                value = lowerCase(file.name);
+                value = lowerCase(files[i].name);
                 break;
 
             case SearchField::PATH:
-                value = lowerCase(file.path);
+                value = lowerCase(files[i].path);
                 break;
         }
 
-        if (value.find(lowerQuery) != std::string::npos) results.push_back(file);
+        if (value.find(lowerQuery) != std::string::npos) results.push_back(i);
     }
 
     return results;
@@ -327,6 +328,17 @@ ValidationResult FileIndexer::validateIndex() const {
     }
 
     return result;
+}
+
+void FileIndexer::displayResults(const std::vector<std::size_t>& indexes) const {
+    for (std::size_t index : indexes) {
+        FileInfo file = files[index];
+        std::cout << "Name: " << file.name << '\n';
+        std::cout << "Path: " << file.path << '\n';
+        std::cout << "Extension: " << file.extension << '\n';
+        std::cout << "Size: " << file.size << '\n';
+        std::cout << "-------------------------------------------\n";
+    }
 }
 
 void FileIndexer::updateFileMetaData(std::size_t fileIndex) {
@@ -465,7 +477,7 @@ const std::vector<std::string>& FileIndexer::getIndexedRoots() const {
     return indexedRoots;
 }
 
-std::vector<FileInfo> FileIndexer::searchByNameSubstring(const std::string& query) const {
+std::vector<std::size_t> FileIndexer::searchByNameSubstring(const std::string& query) const {
 
     if (query.length() < 3) {
         return searchByField(query,SearchField::NAME);
@@ -501,21 +513,21 @@ std::vector<FileInfo> FileIndexer::searchByNameSubstring(const std::string& quer
         if (candidates.empty()) return {};
     }
 
-    std::vector<FileInfo> results;
+    std::vector<std::size_t> results;
 
     for (std::size_t index : candidates) {
         std::string filename = files[index].normalizedName;
-        if (filename.find(lowerQuery) != std::string::npos) results.push_back(files[index]);
+        if (filename.find(lowerQuery) != std::string::npos) results.push_back(index);
     }
     return results;
 }
 
-std::vector<FileInfo> FileIndexer::searchByPath(const std::string& query) const {
+std::vector<std::size_t> FileIndexer::searchByPath(const std::string& query) const {
     return searchByField(query,SearchField::PATH);
 }
 
-std::vector<FileInfo> FileIndexer::searchByExtension(const std::string& query) const {
-    std::vector<FileInfo> results;
+std::vector<std::size_t> FileIndexer::searchByExtension(const std::string& query) const {
+    std::vector<std::size_t> results;
 
     std::string lowerExtension = lowerCase(query);
 
@@ -530,47 +542,47 @@ std::vector<FileInfo> FileIndexer::searchByExtension(const std::string& query) c
     }
 
     for (std::size_t index : it->second) {
-        results.push_back(files[index]);
+        results.push_back(index);
     }
 
     return results;
 }
 
-std::vector<FileInfo> FileIndexer::searchBySize(std::uintmax_t size,SizeOperator operation) const {
-    std::vector<FileInfo> results;
+std::vector<std::size_t> FileIndexer::searchBySize(std::uintmax_t size,SizeOperator operation) const {
+    std::vector<std::size_t> results;
 
-    for (const auto&file : files) {
+    for (std::size_t i = 0; i < files.size(); i++) {
         bool matches = false;
-
+        int fsize = files[i].size;
         switch(operation) {
             case SizeOperator::GREATER:
-                matches = file.size > size;
+                matches = fsize > size;
                 break;
             
             case SizeOperator::LESS:
-                matches = file.size < size;
+                matches = fsize < size;
                 break;
 
             case SizeOperator::GREATER_EQUAL:
-                matches = file.size >= size;
+                matches = fsize >= size;
                 break;
 
             case SizeOperator::LESS_EQUAL:
-                matches = file.size <= size;
+                matches = fsize <= size;
                 break;
 
             case SizeOperator::EQUAL:
-                matches = file.size == size;
+                matches = fsize == size;
                 break;
         }
         if (matches) {
-            results.push_back(file);
+            results.push_back(i);
         }
     }
     return results;
 }
 
-std::vector<FileInfo> FileIndexer::searchBySizeQuery(const std::string& query) const {
+std::vector<std::size_t> FileIndexer::searchBySizeQuery(const std::string& query) const {
     SizeQuery parsedQuery = parseSizeQuery(query);
 
     return searchBySize(parsedQuery.size, parsedQuery.operation);

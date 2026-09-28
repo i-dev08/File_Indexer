@@ -67,10 +67,11 @@ private:
     std::string lowerCase(const std::string& s) const;
     std::uintmax_t parseSize(const std::string& input) const;
     SizeQuery parseSizeQuery(const std::string& input) const;
-    std::vector<FileInfo> searchByField(const std::string& query, SearchField field) const;
+    std::vector<std::size_t> searchByField(const std::string& query, SearchField field) const;
     
 public:
     ValidationResult validateIndex() const;
+    void displayResults(const std::vector<std::size_t>& indexes) const;
     void updateFileMetaData(std::size_t fileIndex);
     void updateIndex();
     void scan(const std::string& directoryPath);
@@ -78,11 +79,11 @@ public:
     void loadIndex(const std::string& filePath);
     const std::vector<FileInfo>& getFiles() const;
     const std::vector<std::string>& getIndexedRoots() const;
-    std::vector<FileInfo> searchByNameSubstring(const std::string& query) const;
-    std::vector<FileInfo> searchByPath(const std::string& query) const;
-    std::vector<FileInfo> searchByExtension(const std::string& extension) const;
-    std::vector<FileInfo> searchBySize(std::uintmax_t size, SizeOperator operation) const;
-    std::vector<FileInfo> searchBySizeQuery(const std::string& query) const;
+    std::vector<std::size_t> searchByNameSubstring(const std::string& query) const;
+    std::vector<std::size_t> searchByPath(const std::string& query) const;
+    std::vector<std::size_t> searchByExtension(const std::string& extension) const;
+    std::vector<std::size_t> searchBySize(std::uintmax_t size, SizeOperator operation) const;
+    std::vector<std::size_t> searchBySizeQuery(const std::string& query) const;
 };
 
 #endif

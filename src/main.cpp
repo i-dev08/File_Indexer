@@ -9,18 +9,6 @@ namespace fs = std::filesystem;
 
 const std::string INDEX_FILE = "data/index.dat";
 
-void displayResults(const std::vector<FileInfo>& results) {
-    std::cout << "\nResults: " << results.size() << "\n\n";
-
-    for (const auto& file : results) {
-        std::cout << "Name: " << file.name << '\n';
-        std::cout << "Path: " << file.path << '\n';
-        std::cout << "Extension: " << file.extension << '\n';
-        std::cout << "Size: " << file.size << '\n';
-        std::cout << "-------------------------------------------\n";
-    }
-}
-
 int main() {
     FileIndexer indexer;
 
@@ -183,25 +171,25 @@ int main() {
             std::cout << "Search filename: ";
             std::getline(std::cin,query);
             auto results = indexer.searchByNameSubstring(query);
-            displayResults(results);
+            indexer.displayResults(results);
         }
 
         else if (choice == 3) {
             std::string query;
             std::cout << "Search path: ";
             std::getline(std::cin,query);
-            std::vector<FileInfo> results = indexer.searchByPath(query);
+            std::vector<std::size_t> results = indexer.searchByPath(query);
 
-            displayResults(results);
+            indexer.displayResults(results);
         }
 
         else if (choice == 4) {
             std::string query;
             std::cout << "Enter Exntension: ";
             std::getline(std::cin,query);
-            std::vector<FileInfo> results = indexer.searchByExtension(query);
+            std::vector<std::size_t> results = indexer.searchByExtension(query);
 
-            displayResults(results);
+            indexer.displayResults(results);
         }
 
        else if (choice == 5) {
@@ -212,9 +200,9 @@ int main() {
             std::getline(std::cin,query);
 
             try {
-                std::vector<FileInfo> results = indexer.searchBySizeQuery(query);
+                std::vector<std::size_t> results = indexer.searchBySizeQuery(query);
 
-                displayResults(results);
+                indexer.displayResults(results);
             }
             catch (const std::invalid_argument& e) {
                 std::cout << "Invalid query: " << e.what() << '\n';
