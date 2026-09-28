@@ -34,7 +34,7 @@ The project recursively scans directories, builds metadata indexes for fast sear
   * Uses compact `uint32_t` representations for trigrams.
   * Starts searches with the smallest available posting list.
   * Intersects sorted posting lists using a two-pointer algorithm.
-  * Candidate results are verified against the actual filename.
+  * Verifies candidate results against the actual filename.
   * Queries shorter than three characters use a linear-search fallback.
 
 * **Persistent index**
@@ -56,10 +56,13 @@ The project recursively scans directories, builds metadata indexes for fast sear
   * Uses compact integer trigram keys instead of storing trigrams as strings.
   * Avoids maintaining a separate exact-name index because substring search already supports exact-name queries.
   * Uses swap-and-pop removal to keep the primary file vector compact.
+  * Returns file indexes from internal search operations rather than unnecessarily copying complete `FileInfo` objects.
 
 * **Interactive command-line interface**
 
 * **CMake + Ninja build system**
+
+---
 
 ## Project Structure
 
@@ -79,7 +82,7 @@ cpp-file-indexer/
 └── README.md
 ```
 
-The `data/` directory is used for locally generated index data and is not tracked by Git.
+The `data/` directory is used for locally generated index data and benchmark data and is not tracked by Git.
 
 ## Requirements
 
@@ -123,11 +126,13 @@ On first launch, the program allows a directory to be added to the index.
 
 Once an index has been created, it is saved to disk and loaded automatically on subsequent launches.
 
-## Search Operations
+---
+
+# Search Operations
 
 The index supports several search operations.
 
-### Search by filename
+## Search by filename
 
 Filename searches are case-insensitive and support substring matching.
 
@@ -139,22 +144,25 @@ Example result:
 
 ```text
 Name: report.cpp
+
 Path: sample_data/project/report.cpp
+
 Extension: .cpp
+
 Size: 1842
 ```
 
 Searching for the complete filename also produces an exact-name match through the substring search system.
 
-### Search by path
+## Search by path
 
-Searches indexed file paths without case sensitivity.
+Searches indexed file paths using the path-search functionality.
 
 ```text
 Search path: project/src
 ```
 
-### Search by extension
+## Search by extension
 
 Both of these inputs are supported:
 
@@ -168,7 +176,7 @@ or:
 .cpp
 ```
 
-### Search by size
+## Search by size
 
 Supports size comparisons such as:
 
@@ -182,7 +190,9 @@ Supports size comparisons such as:
 
 Size queries can also use supported units where applicable.
 
-## Index Architecture
+---
+
+# Index Architecture
 
 The project maintains a primary collection of `FileInfo` objects:
 
@@ -211,14 +221,15 @@ Secondary indexes store positions into this vector:
 
 ```text
 files
-
   │
   ├── extensionIndex
   ├── pathIndex
   └── ngramIndex
 ```
 
-### Normalized Filename
+This keeps the metadata in one primary structure while allowing specialized indexes to accelerate different types of queries.
+
+## Normalized Filename
 
 Each file stores a normalized, lowercase version of its filename.
 
@@ -234,9 +245,9 @@ normalizedName
 search verification
 ```
 
-The additional memory required for this cache was measured against the benchmark dataset and found to be a small trade-off for the reduction in search time.
+The additional memory required for this cache was measured against the benchmark dataset and retained because it provided a measurable search-performance improvement.
 
-### Extension Index
+## Extension Index
 
 Maps normalized extensions to file indexes.
 
@@ -246,7 +257,7 @@ extension → [file indexes]
 
 This allows extension searches to directly access the relevant files.
 
-### Path Index
+## Path Index
 
 Maps a full file path directly to its file index.
 
@@ -254,9 +265,9 @@ Maps a full file path directly to its file index.
 path → file index
 ```
 
-This is used for efficient filesystem validation and incremental index updates.
+This provides constant-average-time exact path lookups and is used for efficient filesystem validation and incremental index updates.
 
-### Trigram Index
+## Trigram Index
 
 Filename substring searches use three-character sequences, or **trigrams**.
 
@@ -286,9 +297,9 @@ The index maps each trigram to a sorted list of candidate file indexes:
 trigram → [file indexes]
 ```
 
-### Search Optimization
+## Search Optimization
 
-For a query containing multiple trigrams, the search process:
+For a query containing multiple trigrams, the search process is:
 
 ```text
 Query
@@ -303,7 +314,7 @@ Intersect sorted posting lists
   ↓
 Verify actual substring
   ↓
-Return results
+Return file indexes
 ```
 
 Starting with the smallest posting list reduces the number of candidates that need to be processed.
@@ -312,7 +323,9 @@ Posting lists are naturally sorted because file indexes are appended as files ar
 
 Queries shorter than three characters fall back to a linear search.
 
-## Persistent Index
+---
+
+# Persistent Index
 
 The index can be serialized to disk and loaded again without rescanning the indexed directories.
 
@@ -329,7 +342,9 @@ Derived search indexes are rebuilt when the index is loaded rather than being st
 
 This keeps the persisted representation focused on the source-of-truth metadata.
 
-## Incremental Indexing
+---
+
+# Incremental Indexing
 
 The index can be validated against the current filesystem state.
 
@@ -362,7 +377,9 @@ Deleted files are handled using **swap-and-pop** so that the main file vector re
 
 When a file is removed from the middle of the vector, the final element is moved into its position and the affected indexes are updated accordingly.
 
-## Multi-Root Indexing
+---
+
+# Multi-Root Indexing
 
 Multiple directories can be indexed by the same `FileIndexer` instance.
 
@@ -370,66 +387,89 @@ Each file stores the root from which it was indexed, allowing incremental update
 
 The persisted index also stores all indexed roots.
 
-## Benchmarking
+---
 
-The project includes a benchmark executable for measuring filename search performance.
+# Benchmarking
 
-The benchmark uses a persistent dataset of **50,000 files** with a deliberately skewed filename distribution:
+The project includes a separate benchmark executable for measuring filename search performance and memory usage.
+
+The benchmark generates a dataset containing **50,000 files** with a deliberately skewed filename distribution:
 
 ```text
-report      30,000 files
-project     12,500 files
-algorithm    5,000 files
-client       2,500 files
+report       30,000 files
+project      12,500 files
+algorithm     5,000 files
+client        2,500 files
 ```
 
-The benchmark performs 1,000 searches per query.
+The benchmark performs **1,000 searches per query**.
 
-A representative run after the current search and memory optimizations produced:
+A representative run of the current implementation produced:
 
 ```text
+Memory before indexing: 5 MB
+Memory after indexing:  37 MB
+Memory increase:        31 MB
+
 Query: report
-Average: ~30 ms
+Average: 14987.9 us
 Matches: 30000
 
 Query: project
-Average: ~14 ms
+Average: 8287.35 us
 Matches: 12500
 
 Query: algorithm
-Average: ~6 ms
+Average: 4187.76 us
 Matches: 5000
 
 Query: xyz987
-Average: <1 µs
+Average: 1.282 us
 Matches: 0
 ```
 
-The indexed process used approximately **34 MB** of working-set memory for this dataset.
+These results correspond to approximately:
 
-Benchmark results can vary between runs because of operating-system scheduling, filesystem state, caching, and other runtime factors.
+```text
+report       ~15.0 ms
+project       ~8.3 ms
+algorithm     ~4.2 ms
+xyz987        ~1.3 µs
+```
 
-## Optimization Decisions
+The benchmark results are workload- and machine-dependent. Runtime can vary because of operating-system scheduling, CPU state, filesystem caching, and other system conditions.
+
+The benchmark is intended primarily for comparing implementation changes under the same workload rather than as an absolute performance guarantee.
+
+---
+
+# Optimization Decisions
 
 Several optimization approaches were benchmarked during development.
 
-### Retained
+## Retained
 
 * Smallest posting list selection
 * Sorted-vector posting-list intersection
 * Compact `uint32_t` trigram representation
 * Cached normalized filenames
+* Index-based search results instead of copying complete `FileInfo` objects
+* Hash-based path indexing
 
-### Rejected after benchmarking
+## Rejected after benchmarking
 
 * Sorting all query posting lists before intersection
 * Manual character-by-character case-insensitive substring verification
+* Maintaining a separate exact-name index
+* Replacing the exact path index with a hierarchical folder structure
 
-These approaches were tested against the benchmark workload and did not provide a performance advantage worth their additional complexity or runtime cost.
+The folder hierarchy was specifically tested as an alternative to the path index. Although it could represent the directory structure naturally, benchmark results showed that exact path lookup was substantially faster with the hash-based `pathIndex`.
 
-This project therefore favors **measured optimizations rather than optimization based solely on intuition**.
+The project therefore favors **measured optimizations rather than optimization based solely on intuition**.
 
-## Technologies
+---
+
+# Technologies
 
 * **C++17**
 * **STL**
@@ -440,7 +480,9 @@ This project therefore favors **measured optimizations rather than optimization 
 * **Ninja**
 * **GCC**
 
-## Future Improvements
+---
+
+# Future Improvements
 
 Potential future improvements include:
 
@@ -452,6 +494,8 @@ Potential future improvements include:
 * Additional filesystem error handling
 * Further memory profiling and data-structure optimization
 
-## Author
+---
+
+# Author
 
 **Ishika R Dev**
