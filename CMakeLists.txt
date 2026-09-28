@@ -13,3 +13,12 @@ add_executable(file_indexer
 target_include_directories(file_indexer PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
+
+add_executable(file_indexer_bench
+    src/benchmark.cpp
+    src/FileIndexer.cpp
+)
+
+target_include_directories(file_indexer_bench PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)

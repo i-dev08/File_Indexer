@@ -9,6 +9,7 @@
 
 struct FileInfo {
     std::string name;
+    std::string normalizedName;
     std::string path;
     std::string extension;
     std::uintmax_t size;
@@ -51,8 +52,7 @@ private:
     std::vector<FileInfo> files;
     std::vector<std::string> indexedRoots;
     std::unordered_map<std::string, std::vector<std::size_t>> extensionIndex;
-    std::unordered_map<std::string, std::vector<std::size_t>> nameIndex;
-    std::unordered_map<std::string,std::vector<std::size_t>> ngramIndex;
+    std::unordered_map<std::uint32_t,std::vector<std::size_t>> ngramIndex;
     std::unordered_map<std::string,std::size_t> pathIndex;
 
     void rebuildIndexes();
@@ -62,7 +62,8 @@ private:
     void removeFile(std::size_t fileIndex);
     void removeFileFromIndexes(const FileInfo& file, std::size_t fileIndex);
     void removeIndexFromPostingList(std::vector<std::size_t>& postingList,std::size_t fileIndex);
-    std::vector<std::string> generateNGrams(const std::string& text) const;
+    std::vector<std::size_t> intersectPostingLists(const std::vector<std::size_t>& first, const std::vector<std::size_t>& second) const;
+    std::vector<std::uint32_t> generateNGrams(const std::string& text) const;
     std::string lowerCase(const std::string& s) const;
     std::uintmax_t parseSize(const std::string& input) const;
     SizeQuery parseSizeQuery(const std::string& input) const;
@@ -77,7 +78,6 @@ public:
     void loadIndex(const std::string& filePath);
     const std::vector<FileInfo>& getFiles() const;
     const std::vector<std::string>& getIndexedRoots() const;
-    std::vector<FileInfo> searchByNameExact(const std::string& query) const;
     std::vector<FileInfo> searchByNameSubstring(const std::string& query) const;
     std::vector<FileInfo> searchByPath(const std::string& query) const;
     std::vector<FileInfo> searchByExtension(const std::string& extension) const;

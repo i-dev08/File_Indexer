@@ -182,28 +182,8 @@ int main() {
             std::string query;
             std::cout << "Search filename: ";
             std::getline(std::cin,query);
-
-            auto exactResults = indexer.searchByNameExact(query);
-
-            if (!exactResults.empty()) {
-                displayResults(exactResults);
-
-                char answer;
-
-                std::cout << "\nSearch for filenames containing \"" << query << "\" as a sunstring? (y/n): ";
-                std::cin >> answer;
-                std::cin.ignore();
-
-                if (answer == 'y' || answer == 'Y') {
-                    auto substringResults = indexer.searchByNameSubstring(query);
-                    displayResults(substringResults);
-                }
-            }
-            else {
-                std::cout << "\nNo exact filename match found";
-                auto substringResults = indexer.searchByNameSubstring(query);
-                displayResults(substringResults);
-            }
+            auto results = indexer.searchByNameSubstring(query);
+            displayResults(results);
         }
 
         else if (choice == 3) {

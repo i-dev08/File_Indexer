@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <fstream>
+#include <limits>
 
 namespace {
     void writeString(std::ofstream& out, const std::string& value) {
@@ -45,7 +46,6 @@ namespace fs = std::filesystem;
 
 void FileIndexer::rebuildIndexes() {
     extensionIndex.clear();
-    nameIndex.clear();
     ngramIndex.clear();
     pathIndex.clear();
 
@@ -53,12 +53,9 @@ void FileIndexer::rebuildIndexes() {
         const auto& file = files[fileIndex];
         pathIndex[file.path] = fileIndex;
 
-        std::string normalizedName = lowerCase(file.name);
-
         extensionIndex[lowerCase(file.extension)].push_back(fileIndex);
-        nameIndex[normalizedName].push_back(fileIndex);
 
-        std::vector<std::string> grams = generateNGrams(normalizedName);
+        std::vector<std::uint32_t> grams = generateNGrams(file.normalizedName);
 
         for (const auto& gram : grams) ngramIndex[gram].push_back(fileIndex);
     }
@@ -68,6 +65,7 @@ void FileIndexer::addFile(const std::filesystem::directory_entry& entry, const s
     FileInfo file;
 
     file.name = entry.path().filename().string();
+    file.normalizedName = lowerCase(file.name);
     file.path = entry.path().string();
     file.extension = entry.path().extension().string();
     file.size = fs::file_size(entry);
@@ -85,11 +83,12 @@ void FileIndexer::addFile(const fs::path& filePath, const std::string& root) {
 
 void FileIndexer::addIndexesForFile(const FileInfo& file, std::size_t fileIndex) {
     pathIndex[file.path] = fileIndex;
-    std::string normalizedname = lowerCase(file.name);
-    nameIndex[normalizedname].push_back(fileIndex);
     extensionIndex[lowerCase(file.extension)].push_back(fileIndex);
-    std::vector<std::string> grams = generateNGrams(normalizedname);
-    for (const auto& gram : grams) ngramIndex[gram].push_back(fileIndex);
+    std::vector<std::uint32_t> grams = generateNGrams(file.normalizedName);
+
+    for (const auto& gram : grams) {
+        ngramIndex[gram].push_back(fileIndex);
+    }
 }
 
 void FileIndexer::removeFile(std::size_t fileIndex) {
@@ -122,13 +121,6 @@ void FileIndexer::removeIndexFromPostingList(std::vector<std::size_t>& postingLi
 
 void FileIndexer::removeFileFromIndexes(const FileInfo& file, std::size_t fileIndex) {
     pathIndex.erase(file.path);
-    std::string normalizedName(lowerCase(file.name));
-    auto nameIt = nameIndex.find(normalizedName);
-
-    if (nameIt != nameIndex.end()) {
-        removeIndexFromPostingList(nameIt->second,fileIndex);
-        if (nameIt->second.empty()) nameIndex.erase(nameIt);
-    }
 
     std::string normalizedExtension(lowerCase(file.extension));
     auto extensionIt = extensionIndex.find(normalizedExtension);
@@ -138,7 +130,7 @@ void FileIndexer::removeFileFromIndexes(const FileInfo& file, std::size_t fileIn
         if (extensionIt->second.empty()) extensionIndex.erase(extensionIt);
     }
 
-    std::vector<std::string> grams = generateNGrams(normalizedName);
+    std::vector<std::uint32_t> grams = generateNGrams(file.normalizedName);
 
     for (const auto& gram : grams) {
         auto gramIt = ngramIndex.find(gram);
@@ -149,13 +141,50 @@ void FileIndexer::removeFileFromIndexes(const FileInfo& file, std::size_t fileIn
     }
 }
 
-std::vector<std::string> FileIndexer::generateNGrams(const std::string& query) const {
-    std::vector<std::string> grams;
+std::vector<std::size_t> FileIndexer::intersectPostingLists(const std::vector<std::size_t>& first, const std::vector<std::size_t>& second) const {
+    std::vector<std::size_t> results;
 
-    if (query.length() < 3) return grams;
+    std::size_t i = 0;
+    std::size_t j = 0;
 
-    for (std::size_t i=0;i<=query.length()-3;i++) {
-        grams.push_back(query.substr(i,3));
+    while (i < first.size() && j < second.size()) {
+        if (first[i] < second[j]) i++;
+        else if (first[i] > second[j]) j++;
+        else {
+            results.push_back(first[i]);
+            i++;
+            j++;
+        }
+    }
+    return results;
+}
+
+std::vector<std::uint32_t> FileIndexer::generateNGrams(const std::string& query) const {
+
+    std::vector<std::uint32_t> grams;
+
+    if (query.length() < 3) {
+        return grams;
+    }
+
+    for (std::size_t i = 0;
+         i <= query.length() - 3;
+         ++i) {
+
+        std::uint32_t gram =
+            (static_cast<std::uint32_t>(
+                static_cast<unsigned char>(query[i])
+            ) << 16)
+            |
+            (static_cast<std::uint32_t>(
+                static_cast<unsigned char>(query[i + 1])
+            ) << 8)
+            |
+            static_cast<std::uint32_t>(
+                static_cast<unsigned char>(query[i + 2])
+            );
+
+        grams.push_back(gram);
     }
 
     return grams;
@@ -360,6 +389,7 @@ void FileIndexer::saveIndex(const std::string& filePath) const {
 
     for (const auto& file : files) {
         writeString(out,file.name);
+        writeString(out,file.normalizedName);
         writeString(out,file.path);
         writeString(out,file.extension);
         out.write(reinterpret_cast<const char*>(&file.size),sizeof(file.size));
@@ -412,6 +442,7 @@ void FileIndexer::loadIndex(const std::string& filePath) {
         FileInfo file;
 
         file.name = readString(in);
+        file.normalizedName = readString(in);
         file.path = readString(in);
         file.extension = readString(in);
         in.read(reinterpret_cast<char*>(&file.size),sizeof(file.size));
@@ -426,20 +457,6 @@ void FileIndexer::loadIndex(const std::string& filePath) {
     rebuildIndexes();
 }
 
-std::vector<FileInfo> FileIndexer::searchByNameExact(const std::string& query) const {
-    std::vector<FileInfo> results;
-
-    std::string lowerQuery = lowerCase(query);
-
-    auto it = nameIndex.find(lowerQuery);
-
-    if (it == nameIndex.end()) return results;
-
-    for (std::size_t index : it->second) results.push_back(files[index]);
-
-    return results;
-}
-
 const std::vector<FileInfo>& FileIndexer::getFiles() const {
     return files;
 }
@@ -449,43 +466,45 @@ const std::vector<std::string>& FileIndexer::getIndexedRoots() const {
 }
 
 std::vector<FileInfo> FileIndexer::searchByNameSubstring(const std::string& query) const {
+
     if (query.length() < 3) {
-        return searchByField(query, SearchField::NAME);
+        return searchByField(query,SearchField::NAME);
     }
 
     std::string lowerQuery = lowerCase(query);
 
-    std::vector<std::string> grams = generateNGrams(lowerQuery);
+    std::vector<std::uint32_t> grams = generateNGrams(lowerQuery);
 
-    std::unordered_set<std::size_t> candidates;
+    std::size_t smallestGramIndex = 0;
+    std::size_t smallestPostingSize = std::numeric_limits<std::size_t>::max();
 
-    auto firstIt = ngramIndex.find(grams[0]);
-
-    if (firstIt == ngramIndex.end())return {};
-
-    for (std::size_t index : firstIt->second) candidates.insert(index);
-
-    for (std::size_t i =1; i < grams.size(); i++) {
+    for (std::size_t i =0; i < grams.size(); i++) {
         auto it = ngramIndex.find(grams[i]);
 
         if (it == ngramIndex.end()) return {};
 
-        std::unordered_set<std::size_t> currentCandidates;
-
-        for (std::size_t index : it->second) currentCandidates.insert(index);
-        for (auto candidateIt = candidates.begin(); candidateIt != candidates.end();) {
-            if (currentCandidates.find(*candidateIt) == currentCandidates.end()) candidateIt = candidates.erase(candidateIt);
-            else ++candidateIt;
+        if (it->second.size() < smallestPostingSize) {
+            smallestPostingSize = it->second.size();
+            smallestGramIndex = i;
         }
     }
 
-    if (candidates.empty()) return {};
+    std::vector<std::size_t> candidates = ngramIndex.at(grams[smallestGramIndex]);
+
+    for (std::size_t i =0; i< grams.size(); i++) {
+        if (i == smallestGramIndex) continue;
+
+        const auto& postingList = ngramIndex.at(grams[i]);
+
+        candidates = intersectPostingLists(candidates,postingList);
+
+        if (candidates.empty()) return {};
+    }
 
     std::vector<FileInfo> results;
 
     for (std::size_t index : candidates) {
-        std::string filename = lowerCase(files[index].name);
-
+        std::string filename = files[index].normalizedName;
         if (filename.find(lowerQuery) != std::string::npos) results.push_back(files[index]);
     }
     return results;
